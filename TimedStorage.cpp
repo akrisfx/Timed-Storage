@@ -1,10 +1,4 @@
-
-#ifndef TIMED_STORAGE_H
-#define TIMED_STORAGE_H
-
-#include <chrono>
-#include <thread>
-#include <map>
+#include "TimedStorage.h"
 
 /*
 Необходимо реализовать шаблонный класс временной очереди, где тип шаблона отвечает за хранимый тип данных в контейнере.
@@ -59,16 +53,20 @@
 template <typename ItemT>
 class TimedStorage {
 private:
+    // как будто можно юзать вектор или мапу. Смотря что нам нужно, скорость или память. А вот как это объеденить. Ы
+    // пусть это будет мапо
     std::map<int, ItemT> que;
-
 public:
     /// Add element item_t to the queue with timeout
     /// Return index of the added element
-    int push(ItemT item, std::chrono::milliseconds timeout);
+    int push(ItemT item, std::chrono::milliseconds timeout) {
+
+    }
 
     /// Pop element from the queue with index idx
     /// Return <exist_flag, element>
-    std::pair<bool, ItemT> pop(int idx);
-};
+    std::pair<bool, ItemT> pop(int idx) {
+        // как будто можно возвращать boost::optional если время кончилось
 
-#endif
+    }
+};
