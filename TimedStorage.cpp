@@ -1,72 +1,66 @@
 #include "TimedStorage.h"
 
-/*
-Необходимо реализовать шаблонный класс временной очереди, где тип шаблона отвечает за хранимый тип данных в контейнере.
-Временная очередь это контейнер, который автоматически удаляет элементы из него, по истечению времени timeout.
 
-Необходимо реализовать два метода:
-Метод добавления элемента в очередь.
-    int push(ItemT item, std::chrono::milliseconds timeout)
-    Принимает два параметра:
-        item - элемент который необходимо добавить
-        timeout - время в миллисекундах, по истечению которого необходимо удалить элемент
-    Возвращает:
-        Уникальный идентификатор объекта, по которому можно будет позже его получить
+int main() {
+    TimedStorage<int> queue;
+    auto a_idx = queue.push(3, std::chrono::milliseconds(3000)); // Добавляем элемент с таймаутом 3 секунды
+    auto b_idx = queue.push(4, std::chrono::milliseconds(1000)); // Добавляем элемент с таймаутом 1 секунда
 
-Метод получения элемента из очереди
-    std::pair<bool, ItemT> pop(int idx)
-    Принимает:
-        idx - уникальный идентификатор объекта, который вернул метод push()
-    Возвращает:
-        Пару из двух элементов: флага и значения.
-        Если элемент на момент вызова pop() все еще находится в очереди, то метод должен вернуть
-        пару {true, item}, то есть флаг показывает наличие элемента в контейнере на момент вызова
-        Если элемента в контейнере нет, то возвращается пара {false, item}, где item это объект, сконструированнйы по умолчанию
-    Примечания:
-        Метод pop() не является блокирующим и не должен дожидаться появления элемента в контейнере
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // Ждем 2 секунды
 
-Пример использования:
-    int main() {
-        TimedStorage<int> queue;
-        auto a_idx = queue.push(3, std::chrono::milliseconds(3000)); // Добавляем элемент с таймаутом 3 секунды
-        auto b_idx = queue.push(4, std::chrono::milliseconds(1000)); // Добавляем элемент с таймаутом 1 секунда
+    auto [b_flag, b_value] = queue.pop(b_idx); // Возвратит пару (false, 0)
+    auto [a_flag, a_value] = queue.pop(a_idx); // Возвратит пару (true, 3)
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // Ждем 2 секунды
+    return 0;
+}
 
-        auto [b_flag, b_value] = queue.pop(b_idx); // Возвратит пару (false, 0)
-        auto [a_flag, a_value] = queue.pop(a_idx); // Возвратит пару (true, 3)
+// template <typename ItemT>
+// struct ItemWithTimer
+// {
+//     const std::chrono::time_point<std::chrono::system_clock> itemCreated;
+//     const std::chrono::time_point<std::chrono::system_clock> itemDeadTime;
+//     const ItemT item;
 
-        return 0;
-    }
-
-Примечания:
-    Очередь должна быть потокобезопасна, то есть должна иметь возможность работы с несколькими потоками одновременно.
+    // делема с забиранием: по ссылке или мувать или в тупую копировать обжект Ы.
+    // а если итем простой то можно и копирнуть.
+    // template<typename ItemT>
+    // ItemWithTimer<ItemT>::ItemWithTimer(const ItemT itemIn, const std::chrono::microseconds timeout) : 
+    //    itemCreated(std::chrono::system_clock::now()),
+    //    itemTimeout(itemCreated + timeout)
+    // {
+    //     item.load(itemIn);
+    // };
 
 
 
-    Ниже приведено примерное объявление класса. Необходимо дополнить его необходимыми полями и реализовать методы push() и pop().
-    Для реализации желательно использовать STL, а также стандарт языка C++17.
-*/
+    
+    // bool CompateTimes
+// };
 
 
 /// Interface of TimedQueue
-template <typename ItemT>
-class TimedStorage {
-private:
-    // как будто можно юзать вектор или мапу. Смотря что нам нужно, скорость или память. А вот как это объеденить. Ы
-    // пусть это будет мапо
-    std::map<int, ItemT> que;
-public:
-    /// Add element item_t to the queue with timeout
-    /// Return index of the added element
-    int push(ItemT item, std::chrono::milliseconds timeout) {
+// template <typename ItemT>
+// class TimedStorage {
+// private:
+//     // как будто можно юзать вектор или мапу. Смотря что нам нужно, скорость или память. А вот как это объеденить. Ы
+//     // пусть это будет мапо
+//     std::map<int, ItemT> que;
+// public:
+//     /// Add element item_t to the queue with timeout
+//     /// Return index of the added element
+// template <typename ItemT>
+// int TimedStorage<ItemT>::push(ItemT item, std::chrono::milliseconds timeout) {
+//     // проверку на отрицательный таймаут не делаю с расчетом что пограмист не дурачек
+//     currentIndex.fetch_add(1);
+//     que.insert([currentIndex, ItemWithTimer<ItemT>(item, timeout)]);
+//     return currentIndex.load();
+// };
 
-    }
+    // Pop element from the queue with index idx
+    // Return <exist_flag, element>
+// template <typename ItemT>
+// std::pair<bool, ItemT> TimedStorage::pop(int idx) {
+//     // как будто можно возвращать boost::optional если время кончилось
 
-    /// Pop element from the queue with index idx
-    /// Return <exist_flag, element>
-    std::pair<bool, ItemT> pop(int idx) {
-        // как будто можно возвращать boost::optional если время кончилось
-
-    }
-};
+// }
+// };
