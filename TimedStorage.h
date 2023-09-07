@@ -5,6 +5,9 @@
 #include <chrono>
 #include <thread>
 #include <map>
+#include <atomic>
+#include <boost/optional.hpp>
+#include "utility"
 
 /*
 Необходимо реализовать шаблонный класс временной очереди, где тип шаблона отвечает за хранимый тип данных в контейнере.
@@ -54,21 +57,76 @@
     Для реализации желательно использовать STL, а также стандарт языка C++17.
 */
 
+template <typename ItemT>
+class ItemWithTimer
+{
+public:
+    std::chrono::time_point<std::chrono::system_clock> itemCreated;
+    std::chrono::time_point<std::chrono::system_clock> itemTimeout;
+    std::atomic<ItemT> item; // а так ли необходимо юзать std::atimic если пишем мы туда 1 раз
+
+    // делема с забиранием: по ссылке или мувать или в тупую копировать обжект Ы.
+    // а если итем простой то можно и копирнуть.
+    ItemWithTimer(const ItemT& itemIn, const std::chrono::microseconds timeout) {
+        itemCreated = std::chrono::system_clock::now();
+        itemTimeout = itemCreated + timeout;
+        item.store(itemIn);
+    };
+    ItemWithTimer(ItemT&& itemIn, const std::chrono::microseconds timeout) {
+        itemCreated = std::chrono::system_clock::now();
+        itemTimeout = itemCreated + timeout;
+        item.store(std::move(itemIn));
+    }
+    ItemWithTimer(){
+        itemCreated = {};
+        itemTimeout = {};
+        item = ItemT();
+    }
+    ItemWithTimer& operator=(const ItemWithTimer& right){
+        if(this == &right){
+            return *this;
+        }
+        itemCreated = right.itemCreated;
+        itemTimeout = right.itemTimeout;
+        item = right;
+        return *this;
+    }
+};
+
+
 
 /// Interface of TimedQueue
 template <typename ItemT>
 class TimedStorage {
 private:
-    std::map<int, ItemT> que;
+    std::map<int, ItemWithTimer<ItemT>> que;
+    std::atomic<int> currentIndex = 0;
 
 public:
     /// Add element item_t to the queue with timeout
     /// Return index of the added element
-    int push(ItemT item, std::chrono::milliseconds timeout);
+    int push(ItemT item, std::chrono::milliseconds timeout) {
+        // проверку на отрицательный таймаут не делаю с расчетом что пограмист не дурачек
+        currentIndex.fetch_add(1);
+//        std::pair<int, ItemWithTimer<ItemT>> toInsert;
+//        toInsert.first = currentIndex.load(std::memory_order_relaxed);
+//        toInsert.second = ItemWithTimer<ItemT>(item, timeout);
+//        que.insert(toInsert);
+//        que.insert(std::make_pair(currentIndex.load(std::memory_order_relaxed), ItemWithTimer<ItemT>(item, timeout)));
+        que.emplace(currentIndex.load(std::memory_order_relaxed), ItemWithTimer<ItemT>(item, timeout));
+        return currentIndex.load(std::memory_order_relaxed);
+    };
 
     /// Pop element from the queue with index idx
     /// Return <exist_flag, element>
-    std::pair<bool, ItemT> pop(int idx);
+    
+    std::pair<bool, boost::optional<ItemT>> pop(int idx){ 
+        if(que.find(idx) != que.end()) {
+            return std::make_pair(true, que[idx].item.load(std::memory_order_relaxed));
+        } else {
+            return std::make_pair(false, boost::none); // решил использовать boost::optional
+        }
+    }
 };
 
 #endif
