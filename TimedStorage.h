@@ -64,7 +64,7 @@ typedef std::chrono::time_point<std::chrono::system_clock> time_point;
 template <typename ItemT>
 class TimedStorage {
 private:
-    // следует ли тут хранить
+    // следует ли тут хранить атомик ItemT?
     std::map<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> que;
     std::atomic<int> currentIndex = 0;
 
