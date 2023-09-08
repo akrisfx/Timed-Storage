@@ -53,10 +53,12 @@
 
 #include <chrono>
 #include <thread>
+#include <future>
+#include <mutex>
 #include <map>
 #include <atomic>
 #include <boost/optional.hpp>
-#include "utility"
+#include <utility>
 typedef std::chrono::time_point<std::chrono::system_clock> time_point;
 
 
@@ -66,22 +68,26 @@ class TimedStorage {
 private:
     // следует ли тут хранить атомик ItemT?
     std::map<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> que;
+    std::map<std::chrono::time_point<std::chrono::system_clock>, int> queToClear;
     std::atomic<int> currentIndex = 0;
 
 public:
     /// Add element item_t to the queue with timeout
     /// Return index of the added element
     int push(ItemT item, std::chrono::milliseconds timeout) {
+        std::mutex mtx;
         // проверку на отрицательный таймаут не делаю с расчетом что пограмист не дурачек
         currentIndex.fetch_add(1);
-        std::pair<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> toInsert;
+        // std::pair<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> toInsert;
+        mtx.lock();
         que.insert(std::make_pair(
-            currentIndex.load(std::memory_order_relaxed),
-            std::make_pair(
-                time_point(std::chrono::system_clock::now()) + timeout,
-                item
-            )
+                currentIndex.load(std::memory_order_relaxed),
+                std::make_pair(
+                        time_point(std::chrono::system_clock::now()) + timeout,
+                        item
+                )
         ));
+        mtx.unlock();
         return currentIndex.load(std::memory_order_relaxed);
     };
 
@@ -89,11 +95,14 @@ public:
     /// Return <exist_flag, element>
     // std::pair<bool, ItemT> pop(int idx)
     std::pair<bool, boost::optional<ItemT>> pop(int idx){
-        if(que.find(idx) != que.end()) {
-            if (que[idx].first > std::chrono::system_clock::now()){
-                return std::make_pair(true, que[idx].second);
+        std::mutex mtx;
+        const std::lock_guard<std::mutex> lock(mtx);
+        auto foundElem = que.find(idx);
+        if(foundElem != que.end()) {
+            if (foundElem->second.first > std::chrono::system_clock::now()){
+                return std::make_pair(true, foundElem->second.second);
             } else {
-                que.erase(idx);
+                que.erase(foundElem);
                 return std::make_pair(false, boost::none);
             }
         } else {

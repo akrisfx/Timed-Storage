@@ -1,5 +1,5 @@
 CC =g++
-FLAGS =-std=c++17 -Wall -Wextra -Werror
+FLAGS =-std=c++17 -O3 -Wall -Wextra -Werror
 
 all: build run
 
