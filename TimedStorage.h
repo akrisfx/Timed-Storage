@@ -59,52 +59,93 @@
 #include <atomic>
 #include <boost/optional.hpp>
 #include <utility>
-typedef std::chrono::time_point<std::chrono::system_clock> time_point;
+typedef std::chrono::time_point<std::chrono::system_clock> time_point_t;
 
 
 
 template <typename ItemT>
 class TimedStorage {
+
 private:
+typedef std::map<int, ItemT> itemMap_t;
+
+    static void controller(TimedStorage* storage) {
+        using namespace std::chrono_literals;
+        std::mutex mtx;
+        auto currentElem = storage->queToClear.end();
+        // bool isEmpty = true;
+        while(storage->controllerDestruct.load() != true) {
+            if(!storage->queToClear.empty()){
+                if (storage->newElemetAdd.load() > 0){
+                    if (currentElem != storage->queToClear.begin()){
+                        currentElem = storage->queToClear.begin();
+                    }
+                    storage->newElemetAdd.fetch_sub(1);
+                } else {
+                    if(currentElem->first < std::chrono::system_clock::now()) {
+                        mtx.lock(); // LOCK
+                        storage->que.erase(currentElem->second);
+                        storage->queToClear.erase(currentElem);
+                        currentElem = storage->queToClear.begin();
+                        mtx.unlock(); // UNLOCK
+                    }
+                }
+            }
+            std::this_thread::sleep_for(12ns);
+        }
+    }
+
     // следует ли тут хранить атомик ItemT?
-    std::map<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> que;
-    std::map<std::chrono::time_point<std::chrono::system_clock>, int> queToClear;
+    itemMap_t que;
+    std::map<time_point_t, int> queToClear;
     std::atomic<int> currentIndex = 0;
+    std::atomic<int> newElemetAdd = 0;
+    std::atomic<bool> controllerDestruct = false;
 
 public:
+    TimedStorage() {
+        std::thread controllerThread(&TimedStorage::controller, this);
+        controllerThread.detach();
+    }
+
+    ~TimedStorage() {
+        std::mutex mtx;
+        controllerDestruct.store(true);
+        mtx.lock(); // LOCK
+        queToClear.clear();
+        que.clear();
+        mtx.unlock(); // UNLOCK
+    }
+
     /// Add element item_t to the queue with timeout
     /// Return index of the added element
     int push(ItemT item, std::chrono::milliseconds timeout) {
         std::mutex mtx;
         // проверку на отрицательный таймаут не делаю с расчетом что пограмист не дурачек
         currentIndex.fetch_add(1);
-        // std::pair<int, std::pair<std::chrono::time_point<std::chrono::system_clock>, ItemT>> toInsert;
-        mtx.lock();
+        int index = currentIndex.load(std::memory_order_relaxed);
+        // std::pair<int, std::pair<time_point_t, ItemT>> toInsert;
+        auto delTime = time_point_t(std::chrono::system_clock::now()) + timeout;
+        mtx.lock(); // LOCK
         que.insert(std::make_pair(
                 currentIndex.load(std::memory_order_relaxed),
-                std::make_pair(
-                        time_point(std::chrono::system_clock::now()) + timeout,
-                        item
-                )
+                item
         ));
-        mtx.unlock();
-        return currentIndex.load(std::memory_order_relaxed);
+        queToClear.insert(std::make_pair(delTime, index));
+        mtx.unlock(); // UNLOCK
+        newElemetAdd.fetch_add(1);
+        return index;
     };
 
     /// Pop element from the queue with index idx
     /// Return <exist_flag, element>
     // std::pair<bool, ItemT> pop(int idx)
     std::pair<bool, boost::optional<ItemT>> pop(int idx){
-        std::mutex mtx;
-        const std::lock_guard<std::mutex> lock(mtx);
+        // std::mutex mtx;
+        // const std::lock_guard<std::mutex> lock(mtx); // LOCK 
         auto foundElem = que.find(idx);
         if(foundElem != que.end()) {
-            if (foundElem->second.first > std::chrono::system_clock::now()){
-                return std::make_pair(true, foundElem->second.second);
-            } else {
-                que.erase(foundElem);
-                return std::make_pair(false, boost::none);
-            }
+            return std::make_pair(true, foundElem->second);
         } else {
             return std::make_pair(false, boost::none); // решил использовать boost::optional
             //return std::make_pair(false, ItemT()) // если всё таки использовать дефолтный конструктор
