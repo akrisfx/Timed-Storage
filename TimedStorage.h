@@ -69,11 +69,13 @@ class TimedStorage {
 private:
 typedef std::map<int, ItemT> itemMap_t;
 
+    // функция контроллирующая удаления объекта из очереди
     static void controller(TimedStorage* storage) {
         using namespace std::chrono_literals;
+
         std::mutex mtx;
         auto currentElem = storage->queToClear.end();
-        // bool isEmpty = true;
+
         while(storage->controllerDestruct.load() != true) {
             if(!storage->queToClear.empty()){
                 if (storage->newElemetAdd.load() > 0){
@@ -84,14 +86,16 @@ typedef std::map<int, ItemT> itemMap_t;
                 } else {
                     if(currentElem->first < std::chrono::system_clock::now()) {
                         mtx.lock(); // LOCK
+
                         storage->que.erase(currentElem->second);
                         storage->queToClear.erase(currentElem);
                         currentElem = storage->queToClear.begin();
+
                         mtx.unlock(); // UNLOCK
                     }
                 }
             }
-            std::this_thread::sleep_for(12ns);
+            std::this_thread::sleep_for(12ns); // слип нужен чтобы поток контроллера не съедал всё ядро
         }
     }
 
@@ -112,8 +116,10 @@ public:
         std::mutex mtx;
         controllerDestruct.store(true);
         mtx.lock(); // LOCK
+
         queToClear.clear();
         que.clear();
+
         mtx.unlock(); // UNLOCK
     }
 
@@ -121,17 +127,18 @@ public:
     /// Return index of the added element
     int push(ItemT item, std::chrono::milliseconds timeout) {
         std::mutex mtx;
-        // проверку на отрицательный таймаут не делаю с расчетом что пограмист не дурачек
         currentIndex.fetch_add(1);
         int index = currentIndex.load(std::memory_order_relaxed);
-        // std::pair<int, std::pair<time_point_t, ItemT>> toInsert;
         auto delTime = time_point_t(std::chrono::system_clock::now()) + timeout;
+
         mtx.lock(); // LOCK
+
         que.insert(std::make_pair(
                 currentIndex.load(std::memory_order_relaxed),
                 item
         ));
         queToClear.insert(std::make_pair(delTime, index));
+
         mtx.unlock(); // UNLOCK
         newElemetAdd.fetch_add(1);
         return index;
@@ -144,6 +151,7 @@ public:
         // std::mutex mtx;
         // const std::lock_guard<std::mutex> lock(mtx); // LOCK 
         auto foundElem = que.find(idx);
+
         if(foundElem != que.end()) {
             return std::make_pair(true, foundElem->second);
         } else {
