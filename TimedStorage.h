@@ -68,12 +68,18 @@ class TimedStorage {
 
 private:
 typedef std::map<int, ItemT> itemMap_t;
+    std::mutex mtx;
+    // следует ли тут хранить атомик ItemT?
+    itemMap_t que;
+    std::map<time_point_t, int> queToClear;
+    std::atomic<int> currentIndex = 0;
+    std::atomic<int> newElemetAdd = 0;
+    std::atomic<bool> controllerDestruct, threadEndFlag = false;
+    std::thread controllerThread;
 
     // функция контроллирующая удаления объекта из очереди
     static void controller(TimedStorage* storage) {
         using namespace std::chrono_literals;
-
-        std::mutex mtx;
         auto currentElem = storage->queToClear.end();
 
         while(storage->controllerDestruct.load() != true) {
@@ -85,56 +91,51 @@ typedef std::map<int, ItemT> itemMap_t;
                     storage->newElemetAdd.fetch_sub(1);
                 } else {
                     if(currentElem->first < std::chrono::system_clock::now()) {
-                        mtx.lock(); // LOCK
+                        storage->mtx.lock(); // LOCK
 
-                        storage->que.erase(currentElem->second);
+                        storage->que.erase(currentElem->second); 
                         storage->queToClear.erase(currentElem);
                         currentElem = storage->queToClear.begin();
 
-                        mtx.unlock(); // UNLOCK
+                        storage->mtx.unlock(); // UNLOCK
                     }
                 }
             }
             std::this_thread::sleep_for(12ns); // слип нужен чтобы поток контроллера не съедал всё ядро
         }
+        threadEndFlag.store(true);
     }
 
-    // следует ли тут хранить атомик ItemT?
-    itemMap_t que;
-    std::map<time_point_t, int> queToClear;
-    std::atomic<int> currentIndex = 0;
-    std::atomic<int> newElemetAdd = 0;
-    std::atomic<bool> controllerDestruct = false;
+    
 
 public:
     TimedStorage() {
-        std::thread controllerThread(&TimedStorage::controller, this);
+        controllerThread = std::thread(&TimedStorage::controller, this);
         controllerThread.detach();
     }
 
     ~TimedStorage() {
-        std::mutex mtx;
         controllerDestruct.store(true);
-        mtx.lock(); // LOCK
+        while(threadEndFlag.load() != true) {
+            std::this_thread::sleep_for(13ns);
+        }
+        const std::lock_guard<std::mutex> lock(mtx);
 
         queToClear.clear();
         que.clear();
-
-        mtx.unlock(); // UNLOCK
     }
 
     /// Add element item_t to the queue with timeout
     /// Return index of the added element
     int push(ItemT item, std::chrono::milliseconds timeout) {
-        std::mutex mtx;
         currentIndex.fetch_add(1);
-        int index = currentIndex.load(std::memory_order_relaxed);
+        int index = currentIndex.load();
         auto delTime = time_point_t(std::chrono::system_clock::now()) + timeout;
 
         mtx.lock(); // LOCK
 
         que.insert(std::make_pair(
-                currentIndex.load(std::memory_order_relaxed),
+                currentIndex.load(),
                 item
         ));
         queToClear.insert(std::make_pair(delTime, index));
@@ -147,9 +148,8 @@ public:
     /// Pop element from the queue with index idx
     /// Return <exist_flag, element>
     // std::pair<bool, ItemT> pop(int idx)
-    std::pair<bool, boost::optional<ItemT>> pop(int idx){
-        // std::mutex mtx;
-        // const std::lock_guard<std::mutex> lock(mtx); // LOCK 
+    std::pair<bool, boost::optional<ItemT>> pop(int idx) {
+        const std::lock_guard<std::mutex> lock(mtx); // LOCK 
         auto foundElem = que.find(idx);
 
         if(foundElem != que.end()) {
