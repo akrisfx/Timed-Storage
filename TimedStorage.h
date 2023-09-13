@@ -78,53 +78,56 @@ typedef std::map<int, ItemT> itemMap_t;
     std::atomic<int> currentIndex = 0;
     std::atomic<bool> controllerDestruct = false;
     std::thread controllerThread;
+    std::condition_variable cv;
 
     // функция контроллирующая удаления объекта из очереди
     static void controller(TimedStorage* storage) {
-
-        while(storage->controllerDestruct.load() != true) {
-            //TODO: rewrite to std::condition_variable::wait_until()
-            if(!storage->queToClear.empty()) {
-                const std::lock_guard<std::mutex> lock(storage->mtx); // LOCK 
-                auto current = storage->queToClear.begin();
-
-                if(current->first < std::chrono::system_clock::now()) {
-                    storage->que.erase(current->second); 
-                    storage->queToClear.erase(current);
-                }
+    while (!storage->controllerDestruct.load()) {
+        std::unique_lock<std::mutex> lock(storage->mtx);
+        if (!storage->queToClear.empty()) {
+            auto current = storage->queToClear.begin();
+            auto wakeupTime = current->first;
+            if (wakeupTime < std::chrono::system_clock::now()) {
+                storage->que.erase(current->second);
+                storage->queToClear.erase(current);
+            } else {
+                storage->cv.wait_until(lock, wakeupTime);
             }
-            std::this_thread::sleep_for(12ns); // слип нужен чтобы поток контроллера не съедал всё ядро
+        } else {
+            storage->cv.wait(lock); // ждём пока не добавят элемент
         }
     }
-
-    
+}
 
 public:
-    TimedStorage() {
-        controllerThread = std::thread(&TimedStorage::controller, this);
-    }
+TimedStorage() {
+    controllerThread = std::thread(&TimedStorage::controller, this);
+}
 
-    ~TimedStorage() {
+~TimedStorage() {
+    {
+        std::lock_guard<std::mutex> lock(mtx);
         controllerDestruct.store(true);
-        controllerThread.join();
+        cv.notify_all();
+    }
+    controllerThread.join();
+}
+
+int push(ItemT item, std::chrono::milliseconds timeout) {
+    currentIndex.fetch_add(1);
+    int index = currentIndex.load();
+    auto delTime = time_point_t(std::chrono::system_clock::now()) + timeout;
+
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        que.insert(std::make_pair(currentIndex.load(), item));
+        queToClear.insert(std::make_pair(delTime, index));
+        cv.notify_one(); // Notify one waiting thread to wake up
     }
 
-    /// Add element item_t to the queue with timeout
-    /// Return index of the added element
-    int push(ItemT item, std::chrono::milliseconds timeout) {
-        currentIndex.fetch_add(1);
-        int index = currentIndex.load();
-        auto delTime = time_point_t(std::chrono::system_clock::now()) + timeout;
+    return index;
+};
 
-        const std::lock_guard<std::mutex> lock(mtx); // LOCK 
-
-        que.insert(std::make_pair(
-                currentIndex.load(),
-                item
-        ));
-        queToClear.insert(std::make_pair(delTime, index));
-        return index;
-    };
 
     /// Pop element from the queue with index idx
     /// Return <exist_flag, element>
