@@ -60,6 +60,7 @@
 #include <boost/optional.hpp>
 #include <utility>
 #include <condition_variable>
+#include <iostream>
 typedef std::chrono::time_point<std::chrono::system_clock> time_point_t;
 using namespace std::chrono_literals;
 
@@ -75,7 +76,7 @@ typedef std::map<int, ItemT> itemMap_t;
     itemMap_t que;
     std::map<time_point_t, int> queToClear;
     std::atomic<int> currentIndex = 0;
-    std::atomic<bool> controllerDestruct, threadEndFlag = false;
+    std::atomic<bool> controllerDestruct = false;
     std::thread controllerThread;
 
     // функция контроллирующая удаления объекта из очереди
@@ -94,7 +95,6 @@ typedef std::map<int, ItemT> itemMap_t;
             }
             std::this_thread::sleep_for(12ns); // слип нужен чтобы поток контроллера не съедал всё ядро
         }
-        storage->threadEndFlag.store(true);
     }
 
     
@@ -102,14 +102,11 @@ typedef std::map<int, ItemT> itemMap_t;
 public:
     TimedStorage() {
         controllerThread = std::thread(&TimedStorage::controller, this);
-        controllerThread.detach();
     }
 
     ~TimedStorage() {
         controllerDestruct.store(true);
-        while(threadEndFlag.load() != true) {
-            std::this_thread::sleep_for(13ns);
-        }
+        controllerThread.join();
     }
 
     /// Add element item_t to the queue with timeout
