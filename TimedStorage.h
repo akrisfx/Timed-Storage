@@ -81,7 +81,7 @@ typedef std::map<int, ItemT> itemMap_t;
     std::condition_variable cv;
 
     // функция контроллирующая удаления объекта из очереди
-    static void controller(TimedStorage* storage) {
+static void controller(TimedStorage* storage) {
     while (!storage->controllerDestruct.load()) {
         std::unique_lock<std::mutex> lock(storage->mtx);
         if (!storage->queToClear.empty()) {
@@ -90,11 +90,14 @@ typedef std::map<int, ItemT> itemMap_t;
             if (wakeupTime < std::chrono::system_clock::now()) {
                 storage->que.erase(current->second);
                 storage->queToClear.erase(current);
-            } else {
-                storage->cv.wait_until(lock, wakeupTime);
             }
+            storage->cv.wait_until(lock, wakeupTime, [&]() {
+                return current == storage->queToClear.begin();
+            });
         } else {
-            storage->cv.wait(lock); // ждём пока не добавят элемент
+            storage->cv.wait(lock, [&]() {
+                return !storage->queToClear.empty();
+            });
         }
     }
 }
